@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:cloudhub="http://www.mulesoft.org/schema/mule/cloudhub"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/cloudhub http://www.mulesoft.org/schema/mule/cloudhub/current/mule-cloudhub.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+    <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="43915b61-0dff-47c1-b73e-fc8734120060" >
+        <http:listener-connection host="0.0.0.0" port="8081" />
+    </http:listener-config>
+    <cloudhub:config name="CloudHub_Config" doc:name="CloudHub Config" doc:id="d3adb579-9bd1-4a99-ac04-f483e446e723" >
+        <cloudhub:connection username="${platform.username}" password="${platform.password}" environment="a9eb693a-6449-4566-9623-c1d0acaf2e07" />
+    </cloudhub:config>
+    <configuration-properties doc:name="Configuration properties" doc:id="5b98c402-ab52-4116-ac7a-ad9e9bc7bdce" file="common-config.yaml" />
+    <http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="17b48890-b788-4a08-99a4-92f3c7e1d792" >
+        <http:request-connection protocol="HTTPS" host="vanchiv.mocklab.io" />
+    </http:request-config>
+    <flow name="cloudhub-connector" doc:id="24febb42-079f-4050-904f-5eb0165c92f4" >
+        <http:listener doc:name="HTTPS://createEmployee" doc:id="e536c01f-b384-4985-87ff-e3c3dc00af71" config-ref="HTTP_Listener_config" path="/createEmployee">
+            <http:error-response >
+                <http:body ><![CDATA[#[payload]]]></http:body>
+            </http:error-response>
+        </http:listener>
+        <logger level="INFO" doc:name="Log Request" doc:id="cf3fe7f4-cf4e-4e61-be38-25c924b2b929" message="#[payload]"/>
+        <http:request method="POST" doc:name="POST:/employee" doc:id="1db9ceee-8982-46aa-b703-6c0a4643ee30" config-ref="HTTP_Request_configuration" path="/employee"/>
+        <logger level="INFO" doc:name="Log Response" doc:id="69ea5c03-aa13-4801-acec-acdc98b27279" message="#[payload]" />
+        <error-handler >
+            <on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="0ee8ffa4-4f7e-4a9a-b8fe-29f0146f6c9a" type="ANY">
+                <set-variable value="#[error.muleMessage.attributes.StatusCode]" doc:name="Set httpStatus" doc:id="9fa1fbf7-1bf2-4667-92af-85900b83f873" variableName="httpStatus"/>
+                <ee:transform doc:name="Set Error Message" doc:id="5a9b72c2-9aeb-4f19-97fb-87cd515428dc" >
+                    <ee:message >
+                        <ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"statusCode": vars.httpStatus default 500,
+	"errorType": error.errorType.asString,
+	"errorMessage": error.description
+	
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <cloudhub:create-notification domain="cloudhub-connector" doc:name="Create Error Notification" doc:id="35d6e4f2-f0a6-4095-af0c-5c41e93900e9" config-ref="CloudHub_Config" priority="ERROR" transactionId="#[correlationId]">
+                    <cloudhub:message ><![CDATA[#["An Error Occurred in the Mule Application. Please do take an immediate action"]]]></cloudhub:message>
+                </cloudhub:create-notification>
+                <logger level="INFO" doc:name="Log Error Message" doc:id="399b9dfe-c23e-400f-ac22-099700bf9173" message="#[payload]"/>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+</mule>
